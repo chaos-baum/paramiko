@@ -117,7 +117,7 @@ def main():
             while True:
                 chan.send(b"$> ")
                 command = b""
-                while not command.endswith(b"\r"):
+                while not command.endswith(b"\n"):
                     transport_byte = chan.recv(1024)
                     chan.send(transport_byte)  # Echo
                     command += transport_byte

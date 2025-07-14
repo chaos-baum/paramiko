@@ -1,22 +1,20 @@
 # paramiko/kex_classic_mceliece.py
 # -*- coding: utf-8 -*-
 
-"""
-Implementierung eines Post-Quantum-Schlüsselaustauschs (KEX) unter
-Verwendung des Key Encapsulation Mechanisms (KEM) Classic McEliece aus liboqs.
-"""
-
 from hashlib import sha256, sha512
 import oqs
 
 from .message import Message
 from .ssh_exception import SSHException
+from oqs import MechanismNotEnabledError
 
 
 # Benutzerdefinierte Nachrichtennummern für unseren neuen KEX.
 # Der Bereich 30-49 ist für KEX-Protokolle reserviert.
 MSG_KEX_OQS_INIT = 32
 MSG_KEX_OQS_REPLY = 33
+c_MSG_KEX_OQS_INIT = bytes([MSG_KEX_OQS_INIT])
+c_MSG_KEX_OQS_REPLY = bytes([MSG_KEX_OQS_REPLY])
 
 
 class KexClassicMcEliece:
@@ -29,28 +27,31 @@ class KexClassicMcEliece:
     name = None
     kem_name = None
     hash_algo = None
+    public_key_size = None
 
     def __init__(self, transport):
         self.transport = transport
-        self.ephemeral_oqs_key = None
-        self.shared_secret = None
+        self.client_kem_instance = None
+        self.client_public_key = None
+
+        if self.kem_name not in oqs.get_enabled_kem_mechanisms():
+            raise MechanismNotEnabledError(
+                f"\n\n*** KEM-Algorithm '{self.kem_name}' not activated! ***\n"
+            )
 
     def start_kex(self):
         """Startet den Schlüsselaustausch."""
         if self.transport.server_mode:
-            # Der Server wartet auf die INIT-Nachricht des Clients.
             self.transport._expect_packet(MSG_KEX_OQS_INIT)
             return
 
         # Client-Modus:
-        # 1. Ephemeres OQS-Schlüsselpaar erzeugen.
-        self.kem_client = oqs.KeyEncapsulation(self.kem_name)
-        self.public_key = self.kem_client.generate_keypair()
+        self.client_kem_instance = oqs.KeyEncapsulation(self.kem_name)
+        self.client_public_key = self.client_kem_instance.generate_keypair()
 
-        # 2. Öffentlichen Schlüssel an den Server senden.
         m = Message()
-        m.add_byte(chr(MSG_KEX_OQS_INIT).encode("utf-8"))
-        m.add_bytes(self.public_key)
+        m.add_byte(c_MSG_KEX_OQS_INIT)
+        m.add_bytes(self.client_public_key)
         self.transport._send_message(m)
         self.transport._expect_packet(MSG_KEX_OQS_REPLY)
 
@@ -62,75 +63,72 @@ class KexClassicMcEliece:
         else:  # Client-Modus
             if ptype == MSG_KEX_OQS_REPLY:
                 return self._parse_kex_reply(m)
-        raise SSHException(
-            "KexClassicMcEliece hat unerwarteten Pakettyp {} erhalten".format(ptype)
-        )
+        raise SSHException("Invalid Packettype {} ".format(ptype))
 
     def _parse_kex_init(self, m):
         """Server-Seite: Verarbeitet die INIT-Nachricht des Clients."""
-        # 1. Öffentlichen Schlüssel des Clients extrahieren.
-        client_public_key = m.get_bytes(1357824)
+        client_public_key = m.get_bytes(self.public_key_size)
 
-        # 2. Ein Geheimnis kapseln. Hierfür wird eine temporäre OQS-Instanz verwendet.
         server_kem = oqs.KeyEncapsulation(self.kem_name)
-        ciphertext, self.shared_secret = server_kem.encap_secret(client_public_key)
+        ciphertext, shared_secret = server_kem.encap_secret(client_public_key)
 
-        # 3. Exchange Hash H berechnen.
         server_host_key = self.transport.get_server_key()
         host_key_blob = server_host_key.asbytes()
-        self._calculate_exchange_hash(host_key_blob, client_public_key, ciphertext)
+        self._calculate_exchange_hash(host_key_blob, client_public_key, shared_secret)
 
-        # 4. H mit dem privaten Host-Schlüssel signieren.
         signature = server_host_key.sign_ssh_data(self.transport.H)
 
-        # 5. Antwort an den Client senden.
         m_reply = Message()
-        m_reply.add_byte(chr(MSG_KEX_OQS_REPLY).encode("utf-8"))
+        m_reply.add_byte(c_MSG_KEX_OQS_REPLY)
         m_reply.add_string(host_key_blob)
         m_reply.add_string(ciphertext)
         m_reply.add_string(signature)
         self.transport._send_message(m_reply)
 
-        # 6. Kryptographie aktivieren.
-        k_as_int = int.from_bytes(self.shared_secret, "big")
+        k_as_int = int.from_bytes(shared_secret, "big")
         self.transport._set_K_H(k_as_int, self.transport.H)
         self.transport._activate_outbound()
 
     def _parse_kex_reply(self, m):
         """Client-Seite: Verarbeitet die REPLY-Nachricht des Servers."""
-        # 1. Nachricht parsen.
         host_key_blob = m.get_string()
         ciphertext = m.get_string()
         signature_blob = m.get_string()
 
-        # 2. Geheimnis dekapseln.
-        self.shared_secret = self.kem_client.decap_secret(ciphertext)
+        shared_secret = self.client_kem_instance.decap_secret(ciphertext)
 
-        print(f"Shared secret: {self.shared_secret.hex()}")
-        # 3. Exchange Hash H berechnen.
-        self._calculate_exchange_hash(host_key_blob, self.public_key, ciphertext)
+        self._calculate_exchange_hash(
+            host_key_blob, self.client_public_key, shared_secret
+        )
 
-        # 4. Host-Schlüssel und Signatur verifizieren.
         self.transport._verify_key(host_key_blob, signature_blob)
 
-        # 5. Kryptographie aktivieren.
-        k_as_int = int.from_bytes(self.shared_secret, "big")
+        k_as_int = int.from_bytes(shared_secret, "big")
         self.transport._set_K_H(k_as_int, self.transport.H)
         self.transport._activate_outbound()
 
-    def _calculate_exchange_hash(self, host_key_blob, client_public_key, ciphertext):
-        """
-        Berechnet den Exchange Hash (H) gemäß RFC 4253, Abschnitt 8.
-        Die Reihenfolge der Elemente ist entscheidend für die Interoperabilität.
-        """
+        self.client_kem_instance.free()
+
+    def _calculate_exchange_hash(self, host_key_blob, client_public_key, shared_secret):
+        if self.transport.server_mode:
+            V_C = self.transport.remote_version
+            V_S = self.transport.local_version
+            I_C = self.transport.remote_kex_init
+            I_S = self.transport.local_kex_init
+        else:
+            V_C = self.transport.local_version
+            V_S = self.transport.remote_version
+            I_C = self.transport.local_kex_init
+            I_S = self.transport.remote_kex_init
+
         m = Message()
-        m.add_string(self.transport.local_version)
-        m.add_string(self.transport.remote_version)
-        m.add_string(self.transport.local_kex_init)
-        m.add_string(self.transport.remote_kex_init)
+        m.add_string(V_C)
+        m.add_string(V_S)
+        m.add_string(I_C)
+        m.add_string(I_S)
         m.add_string(host_key_blob)
-        m.add_string(client_public_key)
-        m.add_string(ciphertext)
+        m.add_bytes(client_public_key)
+        m.add_string(shared_secret)
 
         self.transport.H = self.hash_algo(m.asbytes()).digest()
 
@@ -141,6 +139,7 @@ class KexClassicMcEliece348864(KexClassicMcEliece):
     name = "classic-mceliece-348864-sha256"
     kem_name = "Classic-McEliece-348864"
     hash_algo = sha256
+    public_key_size = 261120
 
 
 class KexClassicMcEliece460896(KexClassicMcEliece):
@@ -149,6 +148,7 @@ class KexClassicMcEliece460896(KexClassicMcEliece):
     name = "classic-mceliece-460896-sha512"
     kem_name = "Classic-McEliece-460896"
     hash_algo = sha512
+    public_key_size = 524160
 
 
 class KexClassicMcEliece6688128(KexClassicMcEliece):
@@ -157,6 +157,7 @@ class KexClassicMcEliece6688128(KexClassicMcEliece):
     name = "classic-mceliece-6688128-sha512"
     kem_name = "Classic-McEliece-6688128"
     hash_algo = sha512
+    public_key_size = 1044992
 
 
 class KexClassicMcEliece6960119(KexClassicMcEliece):
@@ -165,6 +166,7 @@ class KexClassicMcEliece6960119(KexClassicMcEliece):
     name = "classic-mceliece-6960119-sha512"
     kem_name = "Classic-McEliece-6960119"
     hash_algo = sha512
+    public_key_size = 1047319
 
 
 class KexClassicMcEliece8192128(KexClassicMcEliece):
@@ -173,3 +175,4 @@ class KexClassicMcEliece8192128(KexClassicMcEliece):
     name = "classic-mceliece-8192128-sha512"
     kem_name = "Classic-McEliece-8192128"
     hash_algo = sha512
+    public_key_size = 1357824
