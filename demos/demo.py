@@ -28,14 +28,11 @@ import socket
 import sys
 import time
 import traceback
-from paramiko.py3compat import input
+
 
 import paramiko
 
-try:
-    import interactive
-except ImportError:
-    from . import interactive
+import interactive
 
 
 def agent_auth(transport, username):
@@ -61,9 +58,7 @@ def agent_auth(transport, username):
 
 def manual_auth(username, hostname):
     default_auth = "p"
-    auth = input(
-        "Auth by (p)assword, (r)sa key, or (d)ss key? [%s] " % default_auth
-    )
+    auth = input("Auth by (p)assword, (r)sa key, or (d)ss key? [%s] " % default_auth)
     if len(auth) == 0:
         auth = default_auth
 
@@ -130,14 +125,10 @@ try:
         sys.exit(1)
 
     try:
-        keys = paramiko.util.load_host_keys(
-            os.path.expanduser("~/.ssh/known_hosts")
-        )
+        keys = paramiko.util.load_host_keys(os.path.expanduser("~/.ssh/known_hosts"))
     except IOError:
         try:
-            keys = paramiko.util.load_host_keys(
-                os.path.expanduser("~/ssh/known_hosts")
-            )
+            keys = paramiko.util.load_host_keys(os.path.expanduser("~/ssh/known_hosts"))
         except IOError:
             print("*** Unable to open host keys file")
             keys = {}

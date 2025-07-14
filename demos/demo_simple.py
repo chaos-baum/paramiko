@@ -25,15 +25,10 @@ import os
 import socket
 import sys
 import traceback
-from paramiko.py3compat import input
+
 
 import paramiko
-
-try:
-    import interactive
-except ImportError:
-    from . import interactive
-
+import interactive
 
 # setup logging
 paramiko.util.log_to_file("demo_simple.log")
@@ -94,9 +89,7 @@ try:
             )
         except Exception:
             # traceback.print_exc()
-            password = getpass.getpass(
-                "Password for %s@%s: " % (username, hostname)
-            )
+            password = getpass.getpass("Password for %s@%s: " % (username, hostname))
             client.connect(hostname, port, username, password)
 
     chan = client.invoke_shell()

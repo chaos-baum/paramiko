@@ -82,9 +82,9 @@ class AuthHandler_:
         verify that multipart auth works.
         """
         with server(defer=True) as (tc, ts):
-            assert tc.auth_password(
-                username="paranoid", password="paranoid"
-            ) == ["publickey"]
+            assert tc.auth_password(username="paranoid", password="paranoid") == [
+                "publickey"
+            ]
             key = DSSKey.from_private_key_file(_support("dss.key"))
             assert tc.auth_publickey(username="paranoid", key=key) == []
 
@@ -195,10 +195,7 @@ class AuthOnlyHandler_:
                 # Auth did work
                 assert tc.is_authenticated()
                 # Selected expected cert type
-                assert (
-                    tc._agreed_pubkey_algorithm
-                    == "ssh-rsa-cert-v01@openssh.com"
-                )
+                assert tc._agreed_pubkey_algorithm == "ssh-rsa-cert-v01@openssh.com"
 
         @requires_sha1_signing
         def uses_first_preferred_algo_if_key_type_not_in_list(self):
@@ -293,9 +290,7 @@ class SHA2SignaturePubkeys:
         with server(
             pubkeys=[privkey],
             connect=dict(pkey=privkey),
-            init=dict(
-                disabled_algorithms=dict(pubkeys=["ssh-rsa", "rsa-sha2-256"])
-            ),
+            init=dict(disabled_algorithms=dict(pubkeys=["ssh-rsa", "rsa-sha2-256"])),
         ) as (tc, ts):
             assert tc.is_authenticated()
             assert tc._agreed_pubkey_algorithm == "rsa-sha2-512"
@@ -305,9 +300,7 @@ class SHA2SignaturePubkeys:
         with server(
             pubkeys=[privkey],
             connect=dict(pkey=privkey),
-            init=dict(
-                disabled_algorithms=dict(pubkeys=["ssh-rsa", "rsa-sha2-512"])
-            ),
+            init=dict(disabled_algorithms=dict(pubkeys=["ssh-rsa", "rsa-sha2-512"])),
         ) as (tc, ts):
             assert tc.is_authenticated()
             assert tc._agreed_pubkey_algorithm == "rsa-sha2-256"
@@ -341,9 +334,7 @@ class AuthSource_:
 
         def repr_helper_prints_basic_kv_pairs(self):
             assert repr(AuthSource("foo")) == "AuthSource()"
-            assert (
-                AuthSource("foo")._repr(bar="open") == "AuthSource(bar='open')"
-            )
+            assert AuthSource("foo")._repr(bar="open") == "AuthSource(bar='open')"
 
         def authenticate_takes_transport_and_is_abstract(self):
             # TODO: this test kinda just goes away once we're typed?
@@ -483,9 +474,7 @@ class AuthResult_:
 
         def shows_str_not_repr_of_auth_source_and_result(self):
             result = AuthResult(self.strat)
-            result.append(
-                SourceResult(NoneAuth("foo"), ["password", "pubkey"])
-            )
+            result.append(SourceResult(NoneAuth("foo"), ["password", "pubkey"]))
             assert str(result) == "NoneAuth() -> ['password', 'pubkey']"
 
         def empty_list_result_values_show_success_string(self):

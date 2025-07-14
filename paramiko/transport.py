@@ -104,6 +104,13 @@ from paramiko.kex_group14 import KexGroup14, KexGroup14SHA256
 from paramiko.kex_group16 import KexGroup16SHA512
 from paramiko.kex_ecdh_nist import KexNistp256, KexNistp384, KexNistp521
 from paramiko.kex_gss import KexGSSGex, KexGSSGroup1, KexGSSGroup14
+from paramiko.kex_classic_mceliece import (
+    KexClassicMcEliece348864,
+    KexClassicMcEliece460896,
+    KexClassicMcEliece6688128,
+    KexClassicMcEliece6960119,
+    KexClassicMcEliece8192128,
+)
 from paramiko.message import Message
 from paramiko.packet import Packetizer, NeedRekeyException
 from paramiko.primes import ModulusPack
@@ -220,18 +227,23 @@ class Transport(threading.Thread, ClosingContextManager):
         "ssh-dss",
     )
     _preferred_kex = (
-        "ecdh-sha2-nistp256",
-        "ecdh-sha2-nistp384",
-        "ecdh-sha2-nistp521",
-        "diffie-hellman-group16-sha512",
-        "diffie-hellman-group-exchange-sha256",
-        "diffie-hellman-group14-sha256",
-        "diffie-hellman-group-exchange-sha1",
-        "diffie-hellman-group14-sha1",
-        "diffie-hellman-group1-sha1",
+        "classic-mceliece-8192128-sha512",
+        "classic-mceliece-6960119-sha512",
+        "classic-mceliece-6688128-sha512",
+        "classic-mceliece-460896-sha512",
+        "classic-mceliece-348864-sha256",
+        # "ecdh-sha2-nistp256",
+        # "ecdh-sha2-nistp384",
+        # "ecdh-sha2-nistp521",
+        # "diffie-hellman-group16-sha512",
+        # "diffie-hellman-group-exchange-sha256",
+        # "diffie-hellman-group14-sha256",
+        # "diffie-hellman-group-exchange-sha1",
+        # "diffie-hellman-group14-sha1",
+        # "diffie-hellman-group1-sha1",
     )
-    if KexCurve25519.is_available():
-        _preferred_kex = ("curve25519-sha256@libssh.org",) + _preferred_kex
+    # if KexCurve25519.is_available():
+    #     _preferred_kex = ("curve25519-sha256@libssh.org",) + _preferred_kex
     _preferred_gsskex = (
         "gss-gex-sha1-toWM5Slw5Ew8Mqkay+al2g==",
         "gss-group14-sha1-toWM5Slw5Ew8Mqkay+al2g==",
@@ -345,6 +357,11 @@ class Transport(threading.Thread, ClosingContextManager):
         "ecdh-sha2-nistp256": KexNistp256,
         "ecdh-sha2-nistp384": KexNistp384,
         "ecdh-sha2-nistp521": KexNistp521,
+        "classic-mceliece-348864-sha256": KexClassicMcEliece348864,
+        "classic-mceliece-460896-sha512": KexClassicMcEliece460896,
+        "classic-mceliece-6688128-sha512": KexClassicMcEliece6688128,
+        "classic-mceliece-6960119-sha512": KexClassicMcEliece6960119,
+        "classic-mceliece-8192128-sha512": KexClassicMcEliece8192128,
     }
     if KexCurve25519.is_available():
         _kex_info["curve25519-sha256@libssh.org"] = KexCurve25519
@@ -601,9 +618,7 @@ class Transport(threading.Thread, ClosingContextManager):
     def _filter_algorithm(self, type_):
         default = getattr(self, "_preferred_{}".format(type_))
         return tuple(
-            x
-            for x in default
-            if x not in self.disabled_algorithms.get(type_, [])
+            x for x in default if x not in self.disabled_algorithms.get(type_, [])
         )
 
     @property
@@ -622,8 +637,7 @@ class Transport(threading.Thread, ClosingContextManager):
         # runtime
         filtered = self._filter_algorithm("keys")
         return tuple(
-            filtered
-            + tuple("{}-cert-v01@openssh.com".format(x) for x in filtered)
+            filtered + tuple("{}-cert-v01@openssh.com".format(x) for x in filtered)
         )
 
     @property
@@ -653,9 +667,7 @@ class Transport(threading.Thread, ClosingContextManager):
                     self._cipher_info[self.local_cipher]["key-size"] * 8,
                 )
             if self.is_authenticated():
-                out += " (active; {} open channel(s))".format(
-                    len(self._channels)
-                )
+                out += " (active; {} open channel(s))".format(len(self._channels))
             elif self.initial_kex_done:
                 out += " (connected; awaiting auth)"
             else:
@@ -772,9 +784,7 @@ class Transport(threading.Thread, ClosingContextManager):
                 if e is not None:
                     raise e
                 raise SSHException("Negotiation failed.")
-            if event.is_set() or (
-                timeout is not None and time.time() >= max_time
-            ):
+            if event.is_set() or (timeout is not None and time.time() >= max_time):
                 break
 
     def start_server(self, event=None, server=None):
@@ -963,9 +973,7 @@ class Transport(threading.Thread, ClosingContextManager):
         """
         return self.active
 
-    def open_session(
-        self, window_size=None, max_packet_size=None, timeout=None
-    ):
+    def open_session(self, window_size=None, max_packet_size=None, timeout=None):
         """
         Request a new channel to the server, of type ``"session"``.  This is
         just an alias for calling `open_channel` with an argument of
@@ -1171,9 +1179,7 @@ class Transport(threading.Thread, ClosingContextManager):
         if not self.active:
             raise SSHException("SSH session not active")
         port = int(port)
-        response = self.global_request(
-            "tcpip-forward", (address, port), wait=True
-        )
+        response = self.global_request("tcpip-forward", (address, port), wait=True)
         if response is None:
             raise SSHException("TCP forwarding request denied")
         if port == 0:
@@ -1437,23 +1443,15 @@ class Transport(threading.Thread, ClosingContextManager):
                 )
                 self._log(
                     DEBUG,
-                    "Got     : {}: {}".format(
-                        key.get_name(), repr(key.asbytes())
-                    ),
+                    "Got     : {}: {}".format(key.get_name(), repr(key.asbytes())),
                 )
                 raise SSHException("Bad host key from server")
-            self._log(
-                DEBUG, "Host key verified ({})".format(hostkey.get_name())
-            )
+            self._log(DEBUG, "Host key verified ({})".format(hostkey.get_name()))
 
         if (pkey is not None) or (password is not None) or gss_auth or gss_kex:
             if gss_auth:
-                self._log(
-                    DEBUG, "Attempting GSS-API auth... (gssapi-with-mic)"
-                )  # noqa
-                self.auth_gssapi_with_mic(
-                    username, self.gss_host, gss_deleg_creds
-                )
+                self._log(DEBUG, "Attempting GSS-API auth... (gssapi-with-mic)")  # noqa
+                self.auth_gssapi_with_mic(username, self.gss_host, gss_deleg_creds)
             elif gss_kex:
                 self._log(DEBUG, "Attempting GSS-API auth... (gssapi-keyex)")
                 self.auth_gssapi_keyex(username)
@@ -1756,9 +1754,7 @@ class Transport(threading.Thread, ClosingContextManager):
             raise SSHException("No existing session")
         my_event = threading.Event()
         self.auth_handler = AuthHandler(self)
-        self.auth_handler.auth_interactive(
-            username, handler, my_event, submethods
-        )
+        self.auth_handler.auth_interactive(username, handler, my_event, submethods)
         return self.auth_handler.wait_for_response(my_event)
 
     def auth_interactive_dumb(self, username, handler=None, submethods=""):
@@ -1972,18 +1968,14 @@ class Transport(threading.Thread, ClosingContextManager):
         while True:
             self.clear_to_send.wait(0.1)
             if not self.active:
-                self._log(
-                    DEBUG, "Dropping user packet because connection is dead."
-                )  # noqa
+                self._log(DEBUG, "Dropping user packet because connection is dead.")  # noqa
                 return
             self.clear_to_send_lock.acquire()
             if self.clear_to_send.is_set():
                 break
             self.clear_to_send_lock.release()
             if time.time() > start + self.clear_to_send_timeout:
-                raise SSHException(
-                    "Key-exchange timed out waiting for key negotiation"
-                )  # noqa
+                raise SSHException("Key-exchange timed out waiting for key negotiation")  # noqa
         try:
             self._send_message(data)
         finally:
@@ -2010,9 +2002,7 @@ class Transport(threading.Thread, ClosingContextManager):
             raise SSHException("Unknown host key type")
         if not key.verify_ssh_sig(self.H, Message(sig)):
             raise SSHException(
-                "Signature verification ({}) failed.".format(
-                    self.host_key_type
-                )
+                "Signature verification ({}) failed.".format(self.host_key_type)
             )  # noqa
         self.host_key = key
 
@@ -2154,9 +2144,7 @@ class Transport(threading.Thread, ClosingContextManager):
         """
         if self.agreed_on_strict_kex and not self.initial_kex_done:
             name = MSG_NAMES.get(ptype, f"msg {ptype}")
-            raise MessageOrderError(
-                f"In strict-kex mode, but was sent {name!r}!"
-            )
+            raise MessageOrderError(f"In strict-kex mode, but was sent {name!r}!")
 
     def run(self):
         # (use the exposed "run" method, because if we specify a thread target
@@ -2268,9 +2256,7 @@ class Transport(threading.Thread, ClosingContextManager):
                         # itself literally MSG_UNIMPLEMENTED, in which case, we
                         # just shut up to avoid causing a useless loop).
                         name = MSG_NAMES[ptype]
-                        warning = "Oops, unhandled type {} ({!r})".format(
-                            ptype, name
-                        )
+                        warning = "Oops, unhandled type {} ({!r})".format(ptype, name)
                         self._log(WARNING, warning)
                         if ptype != MSG_UNIMPLEMENTED:
                             msg = Message()
@@ -2370,9 +2356,7 @@ class Transport(threading.Thread, ClosingContextManager):
             except ProxyCommandFailure:
                 raise
             except Exception as e:
-                raise SSHException(
-                    "Error reading SSH protocol banner" + str(e)
-                )
+                raise SSHException("Error reading SSH protocol banner" + str(e))
             if buf[:4] == "SSH-":
                 break
             self._log(DEBUG, "Banner: " + buf)
@@ -2548,20 +2532,14 @@ class Transport(threading.Thread, ClosingContextManager):
                 self.agreed_on_strict_kex = (
                     algo == expected and self.advertise_strict_kex
                 )
-                self._log(
-                    DEBUG, f"Strict kex mode: {self.agreed_on_strict_kex}"
-                )
+                self._log(DEBUG, f"Strict kex mode: {self.agreed_on_strict_kex}")
                 to_pop.insert(0, i)
         for i in to_pop:
             kex_algo_list.pop(i)
 
         # CVE mitigation: expect zeroed-out seqno anytime we are performing kex
         # init phase, if strict mode was negotiated.
-        if (
-            self.agreed_on_strict_kex
-            and not self.initial_kex_done
-            and m.seqno != 0
-        ):
+        if self.agreed_on_strict_kex and not self.initial_kex_done and m.seqno != 0:
             raise MessageOrderError(
                 "In strict-kex mode, but KEXINIT was not the first packet!"
             )
@@ -2571,13 +2549,9 @@ class Transport(threading.Thread, ClosingContextManager):
         # as a client, we pick the first item in our list that the server
         # supports.
         if self.server_mode:
-            agreed_kex = list(
-                filter(self.preferred_kex.__contains__, kex_algo_list)
-            )
+            agreed_kex = list(filter(self.preferred_kex.__contains__, kex_algo_list))
         else:
-            agreed_kex = list(
-                filter(kex_algo_list.__contains__, self.preferred_kex)
-            )
+            agreed_kex = list(filter(kex_algo_list.__contains__, self.preferred_kex))
         if len(agreed_kex) == 0:
             # TODO: do an auth-overhaul style aggregate exception here?
             # TODO: would let us streamline log output & show all failures up
@@ -2596,18 +2570,14 @@ class Transport(threading.Thread, ClosingContextManager):
                 )
             )
             agreed_keys = list(
-                filter(
-                    available_server_keys.__contains__, server_key_algo_list
-                )
+                filter(available_server_keys.__contains__, server_key_algo_list)
             )
         else:
             agreed_keys = list(
                 filter(server_key_algo_list.__contains__, self.preferred_keys)
             )
         if len(agreed_keys) == 0:
-            raise IncompatiblePeer(
-                "Incompatible ssh peer (no acceptable host key)"
-            )  # noqa
+            raise IncompatiblePeer("Incompatible ssh peer (no acceptable host key)")  # noqa
         self.host_key_type = agreed_keys[0]
         if self.server_mode and (self.get_server_key() is None):
             raise IncompatiblePeer(
@@ -2642,9 +2612,7 @@ class Transport(threading.Thread, ClosingContextManager):
                 )
             )
         if len(agreed_local_ciphers) == 0 or len(agreed_remote_ciphers) == 0:
-            raise IncompatiblePeer(
-                "Incompatible ssh server (no acceptable ciphers)"
-            )  # noqa
+            raise IncompatiblePeer("Incompatible ssh server (no acceptable ciphers)")  # noqa
         self.local_cipher = agreed_local_ciphers[0]
         self.remote_cipher = agreed_remote_ciphers[0]
         self._log_agreement(
@@ -2666,14 +2634,10 @@ class Transport(threading.Thread, ClosingContextManager):
                 filter(server_mac_algo_list.__contains__, self.preferred_macs)
             )
         if (len(agreed_local_macs) == 0) or (len(agreed_remote_macs) == 0):
-            raise IncompatiblePeer(
-                "Incompatible ssh server (no acceptable macs)"
-            )
+            raise IncompatiblePeer("Incompatible ssh server (no acceptable macs)")
         self.local_mac = agreed_local_macs[0]
         self.remote_mac = agreed_remote_macs[0]
-        self._log_agreement(
-            "MAC", local=self.local_mac, remote=self.remote_mac
-        )
+        self._log_agreement("MAC", local=self.local_mac, remote=self.remote_mac)
 
         if self.server_mode:
             agreed_remote_compression = list(
@@ -2701,10 +2665,7 @@ class Transport(threading.Thread, ClosingContextManager):
                     self.preferred_compression,
                 )
             )
-        if (
-            len(agreed_local_compression) == 0
-            or len(agreed_remote_compression) == 0
-        ):
+        if len(agreed_local_compression) == 0 or len(agreed_remote_compression) == 0:
             msg = "Incompatible ssh server (no acceptable compression)"
             msg += " {!r} {!r} {!r}"
             raise IncompatiblePeer(
@@ -3028,10 +2989,7 @@ class Transport(threading.Thread, ClosingContextManager):
         initial_window_size = m.get_int()
         max_packet_size = m.get_int()
         reject = False
-        if (
-            kind == "auth-agent@openssh.com"
-            and self._forward_agent_handler is not None
-        ):
+        if kind == "auth-agent@openssh.com" and self._forward_agent_handler is not None:
             self._log(DEBUG, "Incoming forward agent connection")
             self.lock.acquire()
             try:
@@ -3043,9 +3001,7 @@ class Transport(threading.Thread, ClosingContextManager):
             origin_port = m.get_int()
             self._log(
                 DEBUG,
-                "Incoming x11 connection from {}:{:d}".format(
-                    origin_addr, origin_port
-                ),
+                "Incoming x11 connection from {}:{:d}".format(origin_addr, origin_port),
             )
             self.lock.acquire()
             try:
@@ -3093,9 +3049,7 @@ class Transport(threading.Thread, ClosingContextManager):
                     (dest_addr, dest_port),
                 )
             else:
-                reason = self.server_object.check_channel_request(
-                    kind, my_chanid
-                )
+                reason = self.server_object.check_channel_request(kind, my_chanid)
             if reason != OPEN_SUCCEEDED:
                 self._log(
                     DEBUG,
@@ -3118,12 +3072,8 @@ class Transport(threading.Thread, ClosingContextManager):
             self._channels.put(my_chanid, chan)
             self.channels_seen[my_chanid] = True
             chan._set_transport(self)
-            chan._set_window(
-                self.default_window_size, self.default_max_packet_size
-            )
-            chan._set_remote_channel(
-                chanid, initial_window_size, max_packet_size
-            )
+            chan._set_window(self.default_window_size, self.default_max_packet_size)
+            chan._set_remote_channel(chanid, initial_window_size, max_packet_size)
         finally:
             self.lock.release()
         m = Message()
@@ -3133,9 +3083,7 @@ class Transport(threading.Thread, ClosingContextManager):
         m.add_int(self.default_window_size)
         m.add_int(self.default_max_packet_size)
         self._send_message(m)
-        self._log(
-            DEBUG, "Secsh channel {:d} ({}) opened.".format(my_chanid, kind)
-        )
+        self._log(DEBUG, "Secsh channel {:d} ({}) opened.".format(my_chanid, kind))
         if kind == "auth-agent@openssh.com":
             self._forward_agent_handler(chan)
         elif kind == "x11":
@@ -3332,9 +3280,7 @@ class ServiceRequestingTransport(Transport):
         if service != "ssh-userauth":
             # TODO 4.0: consider erroring here (with an ability to opt out?)
             # instead as it probably means something went Very Wrong.
-            self._log(
-                DEBUG, 'Service request "{}" accepted (?)'.format(service)
-            )
+            self._log(DEBUG, 'Service request "{}" accepted (?)'.format(service))
             return
         # Record that we saw a service-userauth acceptance, meaning we are free
         # to submit auth requests.
@@ -3422,9 +3368,7 @@ class ServiceRequestingTransport(Transport):
     def auth_interactive(self, username, handler, submethods=""):
         # TODO 4.0: merge to parent, preserving (most of) docstring
         self.ensure_session()
-        return self.auth_handler.auth_interactive(
-            username, handler, submethods
-        )
+        return self.auth_handler.auth_interactive(username, handler, submethods)
 
     def auth_interactive_dumb(self, username, handler=None, submethods=""):
         # TODO 4.0: merge to parent, preserving (most of) docstring

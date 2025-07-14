@@ -20,7 +20,6 @@
 Some unit tests for SSHClient.
 """
 
-
 import gc
 import os
 import platform
@@ -84,8 +83,7 @@ class NullServer(paramiko.ServerInterface):
             return paramiko.AUTH_FAILED
         # Base check: allowed auth type & fingerprint matches
         happy = (
-            key.get_name() in self.__allowed_keys
-            and key.get_fingerprint() == expected
+            key.get_name() in self.__allowed_keys and key.get_fingerprint() == expected
         )
         # Secondary check: if test wants assertions about cert data
         if (
@@ -210,9 +208,7 @@ class ClientTest(unittest.TestCase):
         self.event.wait(1.0)
         self.assertTrue(self.event.is_set())
         self.assertTrue(self.ts.is_active())
-        self.assertEqual(
-            self.connect_kwargs["username"], self.ts.get_username()
-        )
+        self.assertEqual(self.connect_kwargs["username"], self.ts.get_username())
         self.assertEqual(True, self.ts.is_authenticated())
         self.assertEqual(False, self.tc.get_transport().gss_kex_used)
 
@@ -296,9 +292,7 @@ class SSHClientTest(ClientTest):
         ):
             try:
                 self._test_connection(
-                    key_filename=[
-                        _support("{}.key".format(x)) for x in attempt
-                    ],
+                    key_filename=[_support("{}.key".format(x)) for x in attempt],
                     allowed_keys=[types_[x] for x in accept],
                 )
             finally:
@@ -467,9 +461,7 @@ class SSHClientTest(ClientTest):
     @patch("paramiko.client.socket.socket")
     @patch("paramiko.client.socket.getaddrinfo")
     def test_closes_socket_on_socket_errors(self, getaddrinfo, mocket):
-        getaddrinfo.return_value = (
-            ("irrelevant", None, None, None, "whatever"),
-        )
+        getaddrinfo.return_value = (("irrelevant", None, None, None, "whatever"),)
 
         class SocksToBeYou(socket.error):
             pass
@@ -569,9 +561,7 @@ class SSHClientTest(ClientTest):
 
         # Actual connection
         self.tc.connect(
-            **dict(
-                self.connect_kwargs, password="pygmalion", channel_timeout=0.5
-            )
+            **dict(self.connect_kwargs, password="pygmalion", channel_timeout=0.5)
         )
         self.event.wait(1.0)
 
@@ -684,12 +674,10 @@ class SSHClientTest(ClientTest):
         self.tc = SSHClient()
         self.tc.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.assertEqual(0, len(self.tc.get_host_keys()))
-        self.tc.connect(
-            self.addr, self.port, username="slowdive", password="pygmalion"
-        )
+        self.tc.connect(self.addr, self.port, username="slowdive", password="pygmalion")
 
         self.event.wait(1.0)
-        self.assertTrue(self.event.isSet())
+        self.assertTrue(self.event.is_set())
         self.assertTrue(self.ts.is_active())
 
     def test_update_environment(self):
